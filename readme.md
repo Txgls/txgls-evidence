@@ -23,7 +23,5 @@
 # Showcase
 ![image](https://github.com/user-attachments/assets/92a702d9-08ca-4054-bdad-a61bb5d30d9c) ![image](https://github.com/user-attachments/assets/6aa27b01-efea-4149-a871-97c216bc4d20)
 
-
-
 # Planned features:
 <br> DNA evidence unique to each citizen.</br>
