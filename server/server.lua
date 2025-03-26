@@ -5,14 +5,41 @@ local evidenceCount = 0
 local weaponSerialMap = {}
 local playerBloodTypes = {}
 
-local function GetConsistentBloodType(citizenid)
-    if playerBloodTypes[citizenid] then
-        return playerBloodTypes[citizenid]
-    end
+RegisterNetEvent('QBCore:Server:PlayerLoaded', function(Player)
+    local citizenid = Player.PlayerData.citizenid
+    exports.oxmysql:scalar('SELECT blood_type FROM players WHERE citizenid = ?', {citizenid}, function(bloodType)
+        if bloodType then
+            playerBloodTypes[citizenid] = bloodType
+        else
+            local newBloodType = Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
+            playerBloodTypes[citizenid] = newBloodType
+            exports.oxmysql:update('UPDATE players SET blood_type = ? WHERE citizenid = ?', {newBloodType, citizenid})
+        end
+    end)
+end)
+
+AddEventHandler('onResourceStart', function(resourceName)
+    if GetCurrentResourceName() ~= resourceName then return end
     
-    local bloodType = Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
-    playerBloodTypes[citizenid] = bloodType
-    return bloodType
+    exports.oxmysql:update([[
+        ALTER TABLE players 
+        ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10) NULL
+    ]], {}, function() end)
+    
+    exports.oxmysql:fetch('SELECT citizenid, blood_type FROM players WHERE blood_type IS NOT NULL', {}, function(results)
+        for _, row in ipairs(results) do
+            playerBloodTypes[row.citizenid] = row.blood_type
+        end
+    end)
+end)
+
+local function GetConsistentBloodType(citizenid)
+    if not playerBloodTypes[citizenid] then
+        local bloodType = Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
+        playerBloodTypes[citizenid] = bloodType
+        exports.oxmysql:update('UPDATE players SET blood_type = ? WHERE citizenid = ?', {bloodType, citizenid})
+    end
+    return playerBloodTypes[citizenid]
 end
 
 local function GenerateSerialNumber(length)
