@@ -3,9 +3,16 @@ local casings = {}
 local bloods = {}
 local evidenceCount = 0
 local weaponSerialMap = {}
+local playerBloodTypes = {}
 
-local function GetRandomBloodType()
-    return Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
+local function GetConsistentBloodType(citizenid)
+    if playerBloodTypes[citizenid] then
+        return playerBloodTypes[citizenid]
+    end
+    
+    local bloodType = Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
+    playerBloodTypes[citizenid] = bloodType
+    return bloodType
 end
 
 local function GenerateSerialNumber(length)
@@ -59,9 +66,11 @@ RegisterNetEvent('evidence:server:createBlood', function(coords, isDead)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player or math.random(100) > Config.Evidence.BloodDropChance then return end
+    
     evidenceCount = evidenceCount + 1
     local bloodId = "blood_"..evidenceCount
-    local bloodType = GetRandomBloodType()
+    local bloodType = GetConsistentBloodType(Player.PlayerData.citizenid)
+    
     bloods[bloodId] = {
         id = bloodId,
         coords = coords,
