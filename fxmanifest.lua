@@ -2,8 +2,14 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'Txgls'
-description 'Police evidence script. Currently featuring bullet casings.'
-version '1.0.0'
+description 'Police Evidence System'
+version '1.0.1'
+
+dependencies {
+    'oxmysql',
+    'ox_inventory',
+    'qb-core'
+}
 
 shared_scripts {
     'config.lua'
