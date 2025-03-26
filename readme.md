@@ -26,5 +26,4 @@
 
 
 # Planned features:
-<br> Blood ID that's unique to each citizen.</br>
 <br> DNA evidence unique to each citizen.</br>
