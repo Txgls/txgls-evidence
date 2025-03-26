@@ -1,5 +1,5 @@
 # Txgls Evidence
-<br>A police evidence script that currently features bullet casings. This script will be improved on and updated, the coming soon is listed at the bottom of the page.</br>
+<br>A police evidence script that currently features bullet casings. This script will be improved on and updated, the coming soon is listed at the bottom of the page. I understand and recognise this script, currently, isn't perfect and I do expect there to be some bugs and minor issues. Any and all of them can be reported on this repository, and will be reviewed in good time.</br>
 
 # Installation
 <br>Step #1. Download the resource.</br>
