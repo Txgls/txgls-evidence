@@ -16,6 +16,10 @@
 <br> Go into the install directory and then images (txgls-evidence/install/images) and put those images into ox_inventory/web/images.</br>
 <br>Go into the install directory and then items.lua (txgls-evidence/install/items.lua) and put those items into ox_inventory/data/items.lua</br>
 
+# Commands
+<br> /checkevidence : used to collect bullet casings.</br>
+<br> /checkblood : used to collect blood samples.</br>
+
 # Planned features:
 <br> Blood ID that's unique to each citizen.</br>
 <br> DNA evidence unique to each citizen.</br>
