@@ -19,3 +19,12 @@
 			collectedBy = nil, -- Officer who collected it
 		},
 	},
+
+	['blood_sample'] = {
+		name = 'blood_sample',
+		label = 'Blood Sample',
+		weight = 0.15,
+		stack = false,
+		close = true,
+		description = 'A collected blood sample for forensic analysis',
+	},
