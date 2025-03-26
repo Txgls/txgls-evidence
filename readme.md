@@ -20,6 +20,10 @@
 <br> /checkevidence : used to collect bullet casings.</br>
 <br> /checkblood : used to collect blood samples.</br>
 
+# Showcase
+![image](https://github.com/user-attachments/assets/92a702d9-08ca-4054-bdad-a61bb5d30d9c)
+
+
 # Planned features:
 <br> Blood ID that's unique to each citizen.</br>
 <br> DNA evidence unique to each citizen.</br>
