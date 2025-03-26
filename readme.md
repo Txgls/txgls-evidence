@@ -5,6 +5,8 @@
 <br>Step #1. Download the resource.</br>
 <br>Step #2. Put it in your server resources folder.</br>
 <br>Step #3. Ensure it in your server.cfg.</br>
+<br>Step #4. Place the images into ox_inventory/web/images.</br>
+<br>Step #5. Place the items into ox_inventory/data/items.lua.</br>
 
 # Ensure order:
 <br>ox_lib</br>
