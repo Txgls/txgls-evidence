@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'Txgls'
 description 'Police Evidence System'
-version '1.0.3'
+version '1.0.4'
 
 dependencies {
     'oxmysql',
