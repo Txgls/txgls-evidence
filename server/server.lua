@@ -41,17 +41,37 @@ AddEventHandler('onResourceStart', function(resourceName)
 end)
 
 function InitializeDatabase()
+    -- Execute these queries separately
     exports.oxmysql:update([[
         ALTER TABLE players 
-        ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10) NULL;
-        
+        ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10) NULL
+    ]], {}, function(success)
+        if not success then
+            print("Failed to add blood_type column to players table")
+        end
+    end)
+    
+    exports.oxmysql:update([[
         CREATE TABLE IF NOT EXISTS weapon_serials (
-            citizenid VARCHAR(50),
-            weapon_name VARCHAR(50),
-            serial VARCHAR(20),
+            citizenid VARCHAR(50) NOT NULL,
+            weapon_name VARCHAR(50) NOT NULL,
+            serial VARCHAR(20) NOT NULL,
             PRIMARY KEY (citizenid, weapon_name)
-        )
-    ]], {})
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]], {}, function(success)
+        if not success then
+            print("Failed to create weapon_serials table")
+        end
+    end)
+    
+    exports.oxmysql:update([[
+        CREATE INDEX IF NOT EXISTS idx_weapon_serials_serial 
+        ON weapon_serials (serial)
+    ]], {}, function(success)
+        if not success then
+            print("Failed to create index on weapon_serials table")
+        end
+    end)
 end
 
 function LoadBloodTypes()
@@ -280,4 +300,102 @@ RegisterNetEvent('evidence:requestSync', function()
     local src = source
     TriggerClientEvent('evidence:syncCasings', src, casings)
     TriggerClientEvent('evidence:syncBlood', src, bloods)
+end)
+
+-- ========================
+--  Draw Blood Functions
+-- ========================
+
+QBCore.Functions.CreateCallback('evidence:server:canDrawBlood', function(source, cb)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return cb(false) end
+    
+    for jobName, minGrade in pairs(Config.DrawBlood.RequiredJobs) do
+        if Player.PlayerData.job.name == jobName and Player.PlayerData.job.grade.level >= minGrade then
+            return cb(true)
+        end
+    end
+    
+    cb(false)
+end)
+
+RegisterNetEvent('evidence:server:drawBlood', function(targetId)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    local Target = QBCore.Functions.GetPlayer(targetId)
+    
+    if not Player or not Target then return end
+    
+    local hasPermission = false
+    for jobName, minGrade in pairs(Config.DrawBlood.RequiredJobs) do
+        if Player.PlayerData.job.name == jobName and Player.PlayerData.job.grade.level >= minGrade then
+            hasPermission = true
+            break
+        end
+    end
+    
+    if not hasPermission then
+        TriggerClientEvent('QBCore:Notify', src, Config.DrawBlood.Notifications.NoPermission, 'error')
+        return
+    end
+    
+    if not exports['ox_inventory']:GetItem(src, Config.DrawBlood.RequiredItem, nil, false) then
+        TriggerClientEvent('QBCore:Notify', src, Config.DrawBlood.Notifications.NoItem, 'error')
+        return
+    end
+    
+    if math.random(1, 100) <= 10 then
+        TriggerClientEvent('QBCore:Notify', src, Config.DrawBlood.Notifications.TargetResisted, 'error')
+        TriggerClientEvent('QBCore:Notify', targetId, "You resisted the blood draw", 'success')
+        return
+    end
+
+    local charinfo = Player.PlayerData.charinfo or {}
+    local targetCharinfo = Target.PlayerData.charinfo or {}
+    
+    local metadata = {
+        donorCitizenid = Target.PlayerData.citizenid,
+        donorName = targetCharinfo.firstname.." "..targetCharinfo.lastname,
+        bloodType = GetConsistentBloodType(Target.PlayerData.citizenid),
+        isDead = false,
+        collectedAt = os.date("%Y-%m-%d %H:%M:%S", os.time()),
+        collectedBy = Player.PlayerData.citizenid,
+        collectedByName = charinfo.firstname.." "..charinfo.lastname,
+        description = ("Blood sample from %s (ID: %s) | Type: %s | Status: LIVING"):format(
+            targetCharinfo.firstname.." "..targetCharinfo.lastname,
+            Target.PlayerData.citizenid,
+            GetConsistentBloodType(Target.PlayerData.citizenid))
+    }
+    
+    if exports['ox_inventory']:AddItem(src, Config.Evidence.BloodSampleItem, 1, metadata) then
+        TriggerClientEvent('QBCore:Notify', src, Config.DrawBlood.Notifications.Success, 'success')
+        TriggerClientEvent('QBCore:Notify', targetId, "A blood sample was taken from you", 'primary')
+    else
+        TriggerClientEvent('QBCore:Notify', src, "Failed to collect blood sample", 'error')
+    end
+end)
+
+QBCore.Commands.Add("drawblood", "Draw blood from a nearby player", {}, false, function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return end
+    
+    local hasPermission = false
+    for jobName, minGrade in pairs(Config.DrawBlood.RequiredJobs) do
+        if Player.PlayerData.job.name == jobName and Player.PlayerData.job.grade.level >= minGrade then
+            hasPermission = true
+            break
+        end
+    end
+    
+    if not hasPermission then
+        TriggerClientEvent('QBCore:Notify', source, Config.DrawBlood.Notifications.NoPermission, 'error')
+        return
+    end
+    
+    if not exports['ox_inventory']:GetItem(source, Config.DrawBlood.RequiredItem, nil, false) then
+        TriggerClientEvent('QBCore:Notify', source, Config.DrawBlood.Notifications.NoItem, 'error')
+        return
+    end
+    
+    TriggerClientEvent('evidence:client:drawBlood', source)
 end)
