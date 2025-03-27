@@ -1,9 +1,22 @@
 local QBCore = exports['qb-core']:GetCoreObject()
+
+-- Evidence storage
 local casings = {}
 local bloods = {}
 local evidenceCount = 0
-local weaponSerialMap = {}
-local playerBloodTypes = {}
+
+-- Persistent data storage
+local weaponSerials = {} -- citizenid:weaponName -> serial
+local playerBloodTypes = {} -- citizenid -> bloodType
+
+-- Configuration shortcuts
+local Config = Config or {}
+local EvidenceConfig = Config.Evidence or {}
+local Notifications = Config.Notifications or {}
+
+-- ========================
+--  Database Initialization
+-- ========================
 
 RegisterNetEvent('QBCore:Server:PlayerLoaded', function(Player)
     local citizenid = Player.PlayerData.citizenid
@@ -11,9 +24,7 @@ RegisterNetEvent('QBCore:Server:PlayerLoaded', function(Player)
         if bloodType then
             playerBloodTypes[citizenid] = bloodType
         else
-            local newBloodType = Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
-            playerBloodTypes[citizenid] = newBloodType
-            exports.oxmysql:update('UPDATE players SET blood_type = ? WHERE citizenid = ?', {newBloodType, citizenid})
+            AssignNewBloodType(citizenid)
         end
     end)
 end)
@@ -21,129 +32,187 @@ end)
 AddEventHandler('onResourceStart', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
     
+    -- Initialize database schema
+    InitializeDatabase()
+    
+    -- Load existing data
+    LoadBloodTypes()
+    LoadWeaponSerials()
+end)
+
+function InitializeDatabase()
     exports.oxmysql:update([[
         ALTER TABLE players 
-        ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10) NULL
-    ]], {}, function() end)
-    
+        ADD COLUMN IF NOT EXISTS blood_type VARCHAR(10) NULL;
+        
+        CREATE TABLE IF NOT EXISTS weapon_serials (
+            citizenid VARCHAR(50),
+            weapon_name VARCHAR(50),
+            serial VARCHAR(20),
+            PRIMARY KEY (citizenid, weapon_name)
+        )
+    ]], {})
+end
+
+function LoadBloodTypes()
     exports.oxmysql:fetch('SELECT citizenid, blood_type FROM players WHERE blood_type IS NOT NULL', {}, function(results)
         for _, row in ipairs(results) do
             playerBloodTypes[row.citizenid] = row.blood_type
         end
     end)
-end)
-
-local function GetConsistentBloodType(citizenid)
-    if not playerBloodTypes[citizenid] then
-        local bloodType = Config.Evidence.BloodTypes[math.random(#Config.Evidence.BloodTypes)]
-        playerBloodTypes[citizenid] = bloodType
-        exports.oxmysql:update('UPDATE players SET blood_type = ? WHERE citizenid = ?', {bloodType, citizenid})
-    end
-    return playerBloodTypes[citizenid]
 end
 
-local function GenerateSerialNumber(length)
+function LoadWeaponSerials()
+    exports.oxmysql:fetch('SELECT citizenid, weapon_name, serial FROM weapon_serials', {}, function(results)
+        for _, row in ipairs(results) do
+            weaponSerials[row.citizenid..":"..row.weapon_name] = row.serial
+        end
+    end)
+end
+
+-- ========================
+--  Blood Type Management
+-- ========================
+
+function AssignNewBloodType(citizenid)
+    local newBloodType = EvidenceConfig.BloodTypes[math.random(#EvidenceConfig.BloodTypes)]
+    playerBloodTypes[citizenid] = newBloodType
+    exports.oxmysql:update('UPDATE players SET blood_type = ? WHERE citizenid = ?', {newBloodType, citizenid})
+    return newBloodType
+end
+
+function GetConsistentBloodType(citizenid)
+    return playerBloodTypes[citizenid] or AssignNewBloodType(citizenid)
+end
+
+-- ========================
+--  Weapon Serial Management
+-- ========================
+
+function GenerateSerialNumber(length)
     local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     local serial = ""
-    for i = 1, length do
-        local rand = math.random(#chars)
-        serial = serial .. chars:sub(rand, rand)
+    for _ = 1, length do
+        serial = serial .. chars:sub(math.random(#chars), math.random(#chars))
     end
     return serial
 end
 
-local function GetWeaponConsistentSerial(src, weaponName)
+function GetWeaponConsistentSerial(src, weaponName)
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return nil end
-    local weaponKey = Player.PlayerData.citizenid .. ":" .. weaponName
-    if weaponSerialMap[weaponKey] then
-        return weaponSerialMap[weaponKey]
+    
+    local citizenid = Player.PlayerData.citizenid
+    local key = citizenid..":"..weaponName
+    
+    if weaponSerials[key] then
+        return weaponSerials[key]
     end
-    local serial = GenerateSerialNumber(Config.Evidence.SerialNumberLength)
-    weaponSerialMap[weaponKey] = serial
-    return serial
+    
+    exports.oxmysql:scalar('SELECT serial FROM weapon_serials WHERE citizenid = ? AND weapon_name = ?', 
+        {citizenid, weaponName}, function(dbSerial)
+            if dbSerial then
+                weaponSerials[key] = dbSerial
+            else
+                local newSerial = GenerateSerialNumber(EvidenceConfig.SerialNumberLength)
+                weaponSerials[key] = newSerial
+                exports.oxmysql:insert('INSERT INTO weapon_serials (citizenid, weapon_name, serial) VALUES (?, ?, ?)', 
+                    {citizenid, weaponName, newSerial})
+            end
+        end)
+    
+    return weaponSerials[key]
+end
+
+-- ========================
+--  Evidence Creation
+-- ========================
+
+function CreateEvidence(idPrefix, data, storageTable, clientAddEvent, clientRemoveEvent)
+    local evidenceId = idPrefix..evidenceCount
+    evidenceCount = evidenceCount + 1
+    
+    storageTable[evidenceId] = data
+    TriggerClientEvent(clientAddEvent, -1, evidenceId, data)
+    
+    SetTimeout(EvidenceConfig.EvidenceExpireTime * 60000, function()
+        if storageTable[evidenceId] and not storageTable[evidenceId].collected then
+            storageTable[evidenceId] = nil
+            TriggerClientEvent(clientRemoveEvent, -1, evidenceId)
+        end
+    end)
+    
+    return evidenceId
 end
 
 RegisterNetEvent('evidence:createCasing', function(coords, weapon)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
-    evidenceCount = evidenceCount + 1
-    local casingId = "casing_"..evidenceCount
-    local weaponSerial = Config.Evidence.IncludeWeaponSerial and GetWeaponConsistentSerial(src, weapon) or nil
-    casings[casingId] = {
-        id = casingId,
+    
+    local weaponSerial = EvidenceConfig.IncludeWeaponSerial and GetWeaponConsistentSerial(src, weapon)
+    
+    CreateEvidence("casing_", {
         coords = coords,
         weapon = weapon,
         weaponSerial = weaponSerial,
         collected = false,
         createdAt = os.time(),
         createdBy = Player.PlayerData.citizenid
-    }
-    TriggerClientEvent('evidence:addCasing', -1, casingId, casings[casingId])
-    SetTimeout(Config.Evidence.EvidenceExpireTime * 60000, function()
-        if casings[casingId] and not casings[casingId].collected then
-            casings[casingId] = nil
-            TriggerClientEvent('evidence:removeCasing', -1, casingId)
-        end
-    end)
+    }, casings, 'evidence:addCasing', 'evidence:removeCasing')
 end)
 
 RegisterNetEvent('evidence:server:createBlood', function(coords, isDead)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player or math.random(100) > Config.Evidence.BloodDropChance then return end
+    if not Player or math.random(100) > EvidenceConfig.BloodDropChance then return end
     
-    evidenceCount = evidenceCount + 1
-    local bloodId = "blood_"..evidenceCount
-    local bloodType = GetConsistentBloodType(Player.PlayerData.citizenid)
-    
-    bloods[bloodId] = {
-        id = bloodId,
+    CreateEvidence("blood_", {
         coords = coords,
         citizenid = Player.PlayerData.citizenid,
         name = Player.PlayerData.charinfo.firstname.." "..Player.PlayerData.charinfo.lastname,
-        bloodType = bloodType,
+        bloodType = GetConsistentBloodType(Player.PlayerData.citizenid),
         isDead = isDead or false,
         collected = false,
         createdAt = os.time()
-    }
-    TriggerClientEvent('evidence:addBlood', -1, bloodId, bloods[bloodId])
-    SetTimeout(Config.Evidence.EvidenceExpireTime * 60000, function()
-        if bloods[bloodId] and not bloods[bloodId].collected then
-            bloods[bloodId] = nil
-            TriggerClientEvent('evidence:removeBlood', -1, bloodId)
-        end
-    end)
+    }, bloods, 'evidence:addBlood', 'evidence:removeBlood')
 end)
+
+-- ========================
+--  Evidence Collection
+-- ========================
+
+function HasEvidenceBag(src)
+    return exports.ox_inventory:GetItem(src, EvidenceConfig.EvidenceBagItem, nil, false)
+end
 
 RegisterNetEvent('evidence:collectCasing', function(casingId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player or not casings[casingId] or casings[casingId].collected then return end
-    if not Player.Functions.GetItemByName(Config.Evidence.EvidenceBagItem) then
-        TriggerClientEvent('QBCore:Notify', src, Config.Notifications.NoEvidenceBag, 'error')
+    local casing = casings[casingId]
+    
+    if not Player or not casing or casing.collected or not HasEvidenceBag(src) then
+        TriggerClientEvent('QBCore:Notify', src, Notifications.NoEvidenceBag, 'error')
         return
     end
-    local weaponName = "Unknown Weapon"
-    if QBCore.Shared.Weapons[casings[casingId].weapon] then
-        weaponName = QBCore.Shared.Weapons[casings[casingId].weapon].label or weaponName
-    end
-    local info = {
-        serial = casings[casingId].weaponSerial,
-        weapon = casings[casingId].weapon,
+    
+    local weaponName = QBCore.Shared.Weapons[casing.weapon]?.label or "Unknown Weapon"
+    local description = casing.weaponSerial and 
+        ("Bullet casing from %s (Serial: %s)"):format(weaponName, casing.weaponSerial) or
+        "A spent bullet casing"
+    
+    casing.collected = true
+    casing.collectedBy = Player.PlayerData.citizenid
+    casing.collectedAt = os.time()
+    
+    if Player.Functions.AddItem(EvidenceConfig.BulletCasingItem, 1, nil, {
+        serial = casing.weaponSerial,
+        weapon = casing.weapon,
         collectedAt = os.date("%Y-%m-%d %H:%M:%S", os.time()),
         collectedBy = Player.PlayerData.citizenid
-    }
-    local description = casings[casingId].weaponSerial and 
-        string.format("Bullet casing from %s (Serial: %s)", weaponName, casings[casingId].weaponSerial) or
-        "A spent bullet casing"
-    casings[casingId].collected = true
-    casings[casingId].collectedBy = Player.PlayerData.citizenid
-    casings[casingId].collectedAt = os.time()
-    if Player.Functions.AddItem(Config.Evidence.BulletCasingItem, 1, nil, info, description) then
-        TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items[Config.Evidence.BulletCasingItem], "add")
-        TriggerClientEvent('QBCore:Notify', src, Config.Notifications.EvidenceCollected, 'success')
+    }, description) then
+        TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items[EvidenceConfig.BulletCasingItem], "add")
+        TriggerClientEvent('QBCore:Notify', src, Notifications.EvidenceCollected, 'success')
         TriggerClientEvent('evidence:removeCasing', -1, casingId)
     end
 end)
@@ -151,56 +220,59 @@ end)
 RegisterNetEvent('evidence:server:collectBlood', function(bloodId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if not Player or not bloods[bloodId] or bloods[bloodId].collected then return end
-    if not exports.ox_inventory:GetItem(src, Config.Evidence.EvidenceBagItem, nil, false) then
-        TriggerClientEvent('QBCore:Notify', src, Config.Notifications.NoEvidenceBag, 'error')
+    local blood = bloods[bloodId]
+    
+    if not Player or not blood or blood.collected or not HasEvidenceBag(src) then
+        TriggerClientEvent('QBCore:Notify', src, Notifications.NoEvidenceBag, 'error')
         return
     end
+    
     local charinfo = Player.PlayerData.charinfo or {}
-    local bloodData = bloods[bloodId]
-    local metadata = {
-        donorCitizenid = bloodData.citizenid or "UNKNOWN",
-        donorName = bloodData.name or "Unknown Subject",
-        bloodType = bloodData.bloodType or "UNK",
-        isDead = bloodData.isDead == true,
+    blood.collected = true
+    blood.collectedBy = Player.PlayerData.citizenid
+    blood.collectedAt = os.time()
+    
+    if exports.ox_inventory:AddItem(src, EvidenceConfig.BloodSampleItem, 1, {
+        donorCitizenid = blood.citizenid,
+        donorName = blood.name,
+        bloodType = blood.bloodType,
+        isDead = blood.isDead,
         collectedAt = os.date("%Y-%m-%d %H:%M:%S", os.time()),
         collectedBy = Player.PlayerData.citizenid,
         collectedByName = charinfo.firstname and (charinfo.firstname.." "..(charinfo.lastname or "")) or "Unknown Officer",
         description = ("Blood sample from %s (ID: %s) | Type: %s | Status: %s"):format(
-            bloodData.name or "Unknown",
-            bloodData.citizenid or "UNKNOWN",
-            bloodData.bloodType or "UNK",
-            bloodData.isDead and "DECEASED" or "LIVING"
-        )
-    }
-    bloods[bloodId].collected = true
-    bloods[bloodId].collectedBy = Player.PlayerData.citizenid
-    bloods[bloodId].collectedAt = os.time()
-    if exports.ox_inventory:AddItem(src, Config.Evidence.BloodSampleItem, 1, metadata) then
-        TriggerClientEvent('QBCore:Notify', src, Config.Notifications.BloodCollected, 'success')
+            blood.name, blood.citizenid, blood.bloodType, blood.isDead and "DECEASED" or "LIVING")
+    }) then
+        TriggerClientEvent('QBCore:Notify', src, Notifications.BloodCollected, 'success')
         TriggerClientEvent('evidence:removeBlood', -1, bloodId)
     else
         TriggerClientEvent('QBCore:Notify', src, "Failed to collect blood sample", 'error')
     end
 end)
 
+-- ========================
+--  Commands & Sync
+-- ========================
+
+local function IsPolice(player)
+    return player.PlayerData.job.name == 'police'
+end
+
 QBCore.Commands.Add("checkevidence", "Check nearby evidence", {}, false, function(source)
-    local src = source
-    local Player = QBCore.Functions.GetPlayer(src)
-    if Player.PlayerData.job.name == 'police' then
-        TriggerClientEvent('evidence:requestNearby', src)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if IsPolice(Player) then
+        TriggerClientEvent('evidence:requestNearby', source)
     else
-        TriggerClientEvent('QBCore:Notify', src, Config.Notifications.NotPolice, 'error')
+        TriggerClientEvent('QBCore:Notify', source, Notifications.NotPolice, 'error')
     end
 end)
 
 QBCore.Commands.Add("checkblood", "Check nearby blood evidence", {}, false, function(source)
-    local src = source
-    local Player = QBCore.Functions.GetPlayer(src)
-    if Player.PlayerData.job.name == 'police' then
-        TriggerClientEvent('evidence:client:checkBlood', src)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if IsPolice(Player) then
+        TriggerClientEvent('evidence:client:checkBlood', source)
     else
-        TriggerClientEvent('QBCore:Notify', src, Config.Notifications.NotPolice, 'error')
+        TriggerClientEvent('QBCore:Notify', source, Notifications.NotPolice, 'error')
     end
 end)
 
