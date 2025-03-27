@@ -20,11 +20,18 @@
 <br>Go into the install directory and then items.lua (txgls-evidence/install/items.lua) and put those items into ox_inventory/data/items.lua</br>
 
 # Commands
-<br> /checkevidence : used to collect bullet casings.</br>
-<br> /checkblood : used to collect blood samples.</br>
+<br> /checkevidence -|- used to collect bullet casings.</br>
+<br> /checkblood -|- used to collect blood samples.</br>
+<br> /drawblood -|- used to draw blood from people.</br>
 
 # Showcase
 ![image](https://github.com/user-attachments/assets/92a702d9-08ca-4054-bdad-a61bb5d30d9c) ![image](https://github.com/user-attachments/assets/6aa27b01-efea-4149-a871-97c216bc4d20)
+
+# Current features
+<br> Ability to collect and view bullet casings and blood samples.</br>
+<br> Using a flashlight to view bullet casings and blood samples.</br>
+<br> Information stored safely in a SQL database for consistency.</br>
+<br> Ability for custom jobs and grades to draw blood from people.</br>
 
 # Planned features:
 <br>Fingerprinting system.</br>
