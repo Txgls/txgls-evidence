@@ -5,6 +5,20 @@ local nearbyEvidence = {}
 local canCollect = false
 local currentEvidence = nil
 local evidenceType = nil
+local flashlightEquipped = false
+local flashlightActive = false
+
+Citizen.CreateThread(function()
+    while true do
+        local playerPed = PlayerPedId()
+        local currentWeapon = GetSelectedPedWeapon(playerPed)
+
+        flashlightEquipped = (currentWeapon == GetHashKey("WEAPON_FLASHLIGHT"))
+        flashlightActive = flashlightEquipped and IsFlashLightOn(playerPed)
+        
+        Citizen.Wait(500)
+    end
+end)
 
 Citizen.CreateThread(function()
     while true do
@@ -15,42 +29,44 @@ Citizen.CreateThread(function()
         currentEvidence = nil
         evidenceType = nil
         
-        for id, casing in pairs(casings) do
-            local distance = #(playerCoords - casing.coords)
-            if distance < 20.0 then
-                nearbyEvidence[id] = {type = 'casing', data = casing}
-                if distance < Config.Evidence.CollectDistance and not casing.collected then
-                    canCollect = true
-                    currentEvidence = id
-                    evidenceType = 'casing'
+        if flashlightActive then
+            for id, casing in pairs(casings) do
+                local distance = #(playerCoords - casing.coords)
+                if distance < 20.0 then
+                    nearbyEvidence[id] = {type = 'casing', data = casing}
+                    if distance < Config.Evidence.CollectDistance and not casing.collected then
+                        canCollect = true
+                        currentEvidence = id
+                        evidenceType = 'casing'
+                    end
                 end
             end
-        end
-        
-        for id, blood in pairs(bloods) do
-            local distance = #(playerCoords - blood.coords)
-            if distance < 20.0 then
-                nearbyEvidence[id] = {type = 'blood', data = blood}
-                if distance < Config.Evidence.CollectDistance and not blood.collected then
-                    canCollect = true
-                    currentEvidence = id
-                    evidenceType = 'blood'
+            
+            for id, blood in pairs(bloods) do
+                local distance = #(playerCoords - blood.coords)
+                if distance < 20.0 then
+                    nearbyEvidence[id] = {type = 'blood', data = blood}
+                    if distance < Config.Evidence.CollectDistance and not blood.collected then
+                        canCollect = true
+                        currentEvidence = id
+                        evidenceType = 'blood'
+                    end
                 end
             end
-        end
-        
-        if Config.Debug then
-            for id, evidence in pairs(nearbyEvidence) do
-                local color = evidence.type == 'casing' and {255, 0, 0} or {0, 0, 255}
-                DrawMarker(28, 
-                    evidence.data.coords.x, 
-                    evidence.data.coords.y, 
-                    evidence.data.coords.z + 0.1, 
-                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                    0.1, 0.1, 0.1, 
-                    color[1], color[2], color[3], 100, 
-                    false, true, 2, nil, nil, false
-                )
+            
+            if Config.Debug then
+                for id, evidence in pairs(nearbyEvidence) do
+                    local color = evidence.type == 'casing' and {255, 255, 0} or {0, 0, 255}
+                    DrawMarker(28, 
+                        evidence.data.coords.x, 
+                        evidence.data.coords.y, 
+                        evidence.data.coords.z + 0.1, 
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+                        0.1, 0.1, 0.1, 
+                        color[1], color[2], color[3], 100, 
+                        false, true, 2, nil, nil, false
+                    )
+                end
             end
         end
         
@@ -60,7 +76,7 @@ end)
 
 Citizen.CreateThread(function()
     while true do
-        if canCollect and currentEvidence and evidenceType then
+        if canCollect and currentEvidence and evidenceType and flashlightActive then
             local text = "[E] Collect " .. (evidenceType == 'casing' and "Casing" or "Blood Sample")
             local evidenceData = evidenceType == 'casing' and casings[currentEvidence] or bloods[currentEvidence]
             DrawText3D(
