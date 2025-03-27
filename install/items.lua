@@ -28,3 +28,20 @@
 		close = true,
 		description = 'A collected blood sample for forensic analysis',
 	},
+
+	['bloodkit'] = {
+		label = 'Blood Collection Kit',
+		weight = 500,
+		stack = true,
+		close = true,
+		description = 'A sterile kit for collecting blood samples',
+		client = {
+			status = { thirst = 2000 }, -- Optional: using it reduces thirst
+			anim = { dict = 'anim@amb@business@weed@weed_inspecting_lo_med_hi@', 
+					clip = 'weed_spraybottle_crouch_base_inspector' },
+			prop = { model = `v_ret_ta_firstaid`, -- Model for when held
+					pos = vec3(0.05, 0.0, 0.0),
+					rot = vec3(0.0, 0.0, 0.0) },
+			usetime = 50000
+		}
+	},
