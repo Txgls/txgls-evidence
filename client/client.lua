@@ -310,3 +310,58 @@ end
 RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
     TriggerServerEvent('evidence:server:initBlood')
 end)
+
+-- ========================
+--  Draw Blood Command
+-- ========================
+
+RegisterCommand('drawblood', function()
+    local playerPed = PlayerPedId()
+    local playerCoords = GetEntityCoords(playerPed)
+    
+    QBCore.Functions.TriggerCallback('evidence:server:canDrawBlood', function(canDraw)
+        if not canDraw then
+            QBCore.Functions.Notify(Config.DrawBlood.Notifications.NoPermission, 'error')
+            return
+        end
+        
+        if not HasBloodKit() then
+            QBCore.Functions.Notify(Config.DrawBlood.Notifications.NoItem, 'error')
+            return
+        end
+        
+        local player, distance = QBCore.Functions.GetClosestPlayer()
+        if player == -1 or distance > 2.5 then
+            QBCore.Functions.Notify(Config.DrawBlood.Notifications.NoTarget, 'error')
+            return
+        end
+        
+        local targetPed = GetPlayerPed(player)
+        
+        RequestAnimDict(Config.DrawBlood.Animation.dict)
+        while not HasAnimDictLoaded(Config.DrawBlood.Animation.dict) do
+            Citizen.Wait(0)
+        end
+        
+        TaskPlayAnim(playerPed, Config.DrawBlood.Animation.dict, Config.DrawBlood.Animation.anim, 
+                    8.0, -8.0, Config.DrawBlood.Animation.duration, 33, 0, false, false, false)
+        
+        QBCore.Functions.Progressbar("drawing_blood", "Drawing blood sample...", 
+            Config.DrawBlood.Animation.duration, false, true, {
+                disableMovement = true,
+                disableCarMovement = true,
+                disableMouse = false,
+                disableCombat = true,
+            }, {}, {}, {}, function()
+                ClearPedTasks(playerPed)
+                TriggerServerEvent('evidence:server:drawBlood', GetPlayerServerId(player))
+            end, function()
+                ClearPedTasks(playerPed)
+                QBCore.Functions.Notify("Cancelled", "error")
+            end)
+    end)
+end, false)
+
+function HasBloodKit()
+    return exports['ox_inventory']:Search('count', Config.DrawBlood.RequiredItem) > 0
+end
