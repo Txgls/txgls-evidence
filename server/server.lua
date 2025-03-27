@@ -209,25 +209,3 @@ RegisterNetEvent('evidence:requestSync', function()
     TriggerClientEvent('evidence:syncCasings', src, casings)
     TriggerClientEvent('evidence:syncBlood', src, bloods)
 end)
-
-QBCore.Commands.Add('testblood', 'Test blood sample', {}, false, function(source)
-    local src = source
-    local Player = QBCore.Functions.GetPlayer(src)
-    local info = {
-        donorCitizenid = 'TEST'..math.random(1000,9999),
-        donorName = "Test Subject",
-        bloodType = "O+",
-        isDead = false,
-        collectedAt = os.date("%Y-%m-%d %H:%M:%S"),
-        collectedBy = Player.PlayerData.citizenid,
-        collectedByName = Player.PlayerData.charinfo.firstname.." "..Player.PlayerData.charinfo.lastname
-    }
-    local description = ("Blood sample from %s | Type: %s | Status: %s"):format(
-        info.donorName,
-        info.bloodType,
-        info.isDead and "DECEASED" or "LIVING"
-    )
-    if Player.Functions.AddItem('blood_sample', 1, nil, info, description) then
-        TriggerClientEvent('QBCore:Notify', src, 'Test blood sample added', 'success')
-    end
-end, 'admin')
